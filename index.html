@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>SmileOS — Verificação Facial</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet"/>
+<style>
+/* ── RESET & BASE ── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+–bg:#07090f;
+–surface:#0d1117;
+–card:#111520;
+–border:rgba(255,255,255,0.07);
+–cyan:#38bdf8;
+–cyan-glow:rgba(56,189,248,0.25);
+–cyan-dim:rgba(56,189,248,0.1);
+–green:#4ade80;
+–green-glow:rgba(74,222,128,0.25);
+–gold:#fbbf24;
+–red:#f87171;
+–text:#e2e8f0;
+–muted:#475569;
+–radius:20px;
+–font:‘Poppins’,sans-serif;
+}
+
+html{height:100%}
+body{
+min-height:100%;
+background:var(–bg);
+color:var(–text);
+font-family:var(–font);
+display:flex;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+padding:20px 16px 32px;
+position:relative;
+overflow-x:hidden;
+}
+
+/* Ambient glow */
+body::before{
+content:’’;position:fixed;inset:0;pointer-events:none;z-index:0;
+background:
+radial-gradient(ellipse 70% 50% at 50% 0%, rgba(56,189,248,0.06) 0%,transparent 60%),
+radial-gradient(ellipse 60% 40% at 50% 105%, rgba(74,222,128,0.04) 0%,transparent 55%);
+}
+
+/* ── WRAPPER ── */
+.wrap{
+position:relative;z-index:1;
+width:100%;max-width:420px;
+display:flex;flex-direction:column;align-items:center;
+gap:0;
+}
+
+/* ── LOGO / HEADER ── */
+.logo{
+font-size:10px;letter-spacing:.25em;font-weight:500;
+color:var(–muted);text-transform:uppercase;margin-bottom:32px;
+display:flex;align-items:center;gap:8px;
+}
+.logo::before,.logo::after{
+content:’’;display:block;width:24px;height:1px;background:var(–muted);opacity:.4;
+}
+
+/* ── SCREENS ── */
+.screen{display:none;flex-direction:column;align-items:center;width:100%;text-align:center}
+.screen.active{display:flex;animation:fadeUp .5s cubic-bezier(.22,1,.36,1) both}
+@keyframes fadeUp{
+from{opacity:0;transform:translateY(16px)}
+to{opacity:1;transform:translateY(0)}
+}
+
+/* ── SCREEN 0: HOME ── */
+.alert-chip{
+display:inline-flex;align-items:center;gap:6px;
+padding:5px 14px;border-radius:100px;
+background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.25);
+font-size:11px;font-weight:500;color:var(–red);
+letter-spacing:.04em;margin-bottom:28px;
+}
+.alert-chip .dot-pulse{
+width:6px;height:6px;border-radius:50%;background:var(–red);
+animation:pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.5);opacity:.5}}
+
+.home-title{
+font-size:clamp(22px,6vw,30px);font-weight:700;line-height:1.25;
+margin-bottom:10px;color:#fff;
+}
+.home-sub{
+font-size:14px;font-weight:300;color:var(–muted);
+margin-bottom:40px;line-height:1.6;
+}
+.home-sub strong{color:var(–text);font-weight:500}
+
+/* ── CAMERA CONTAINER ── */
+.cam-container{
+position:relative;width:100%;
+border-radius:24px;overflow:hidden;
+background:#000;
+box-shadow:
+0 0 0 1px rgba(56,189,248,0.15),
+0 0 40px rgba(56,189,248,0.12),
+0 24px 60px rgba(0,0,0,0.5);
+margin-bottom:28px;
+aspect-ratio:3/4;
+display:none;
+}
+.cam-container.visible{display:block}
+
+video{
+width:100%;height:100%;object-fit:cover;
+transform:scaleX(-1);/* mirror for selfie */
+display:block;
+}
+
+/* Scan overlay on video */
+.scan-overlay{
+position:absolute;inset:0;pointer-events:none;
+border-radius:24px;overflow:hidden;
+opacity:0;transition:opacity .4s;
+}
+.scan-overlay.on{opacity:1}
+.scan-line-v{
+position:absolute;left:0;right:0;height:2px;
+background:linear-gradient(90deg,transparent,rgba(56,189,248,.7),transparent);
+animation:scanV 2.2s ease-in-out infinite;top:0;
+}
+@keyframes scanV{
+0%{top:0;opacity:0}5%{opacity:.8}95%{opacity:.4}100%{top:100%;opacity:0}
+}
+
+/* Face detection box */
+.face-box{
+position:absolute;
+top:50%;left:50%;
+transform:translate(-50%,-50%);
+width:52%;aspect-ratio:3/4;
+border-radius:50% 50% 45% 45% / 40% 40% 60% 60%;
+border:2px solid var(–cyan);
+opacity:0;transition:opacity .5s;
+box-shadow:0 0 16px var(–cyan-glow),inset 0 0 16px rgba(56,189,248,0.05);
+}
+.face-box.visible{opacity:1;animation:faceAnim 3s ease-in-out infinite}
+@keyframes faceAnim{
+0%,100%{transform:translate(-50%,-50%) scale(1)}
+50%{transform:translate(-50%,-50%) scale(1.02)}
+}
+
+/* Corner ticks on face box */
+.face-box::before,.face-box::after{display:none}
+
+/* Smile ring (step 3) */
+.smile-ring{
+position:absolute;inset:-6px;
+border-radius:50%;
+border:3px solid transparent;
+opacity:0;transition:opacity .4s;
+}
+.smile-ring.active{
+opacity:1;
+border-color:var(–green);
+box-shadow:0 0 20px var(–green-glow);
+animation:smileRingAnim 1.5s ease-in-out infinite;
+}
+@keyframes smileRingAnim{
+0%,100%{transform:scale(1);opacity:1}
+50%{transform:scale(1.04);opacity:.7}
+}
+
+/* Video status badge */
+.vid-badge{
+position:absolute;top:12px;left:12px;
+display:flex;align-items:center;gap:6px;
+background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);
+border-radius:100px;padding:5px 12px 5px 8px;
+font-size:10px;font-weight:500;color:#fff;letter-spacing:.03em;
+border:1px solid rgba(255,255,255,0.1);
+}
+.vid-badge .rec{width:7px;height:7px;border-radius:50%;background:var(–red);animation:pulse 1.2s ease-in-out infinite}
+
+/* ── STATUS CARD ── */
+.status-card{
+width:100%;background:var(–card);
+border:1px solid var(–border);
+border-radius:var(–radius);
+padding:20px 22px;
+margin-bottom:20px;
+text-align:left;
+}
+.status-label{
+font-size:10px;font-weight:600;letter-spacing:.18em;
+color:var(–muted);text-transform:uppercase;margin-bottom:8px;
+}
+.status-msg{
+font-size:16px;font-weight:500;color:#fff;line-height:1.4;
+min-height:26px;
+transition:opacity .3s;
+}
+.status-msg .emoji{font-style:normal}
+
+/* ── PROGRESS BAR ── */
+.prog-wrap{
+width:100%;margin-bottom:14px;
+}
+.prog-track{
+width:100%;height:3px;background:rgba(255,255,255,0.06);
+border-radius:100px;overflow:hidden;
+}
+.prog-fill{
+height:100%;background:linear-gradient(90deg,var(–cyan),#818cf8);
+border-radius:100px;width:0%;
+transition:width .3s ease;
+box-shadow:0 0 8px rgba(56,189,248,0.5);
+}
+.prog-label{
+font-size:10px;color:var(–muted);margin-top:6px;
+font-weight:400;letter-spacing:.02em;
+min-height:16px;
+transition:opacity .3s;
+}
+
+/* ── PHRASES ── */
+.phrases{
+width:100%;background:var(–card);
+border:1px solid var(–border);border-radius:var(–radius);
+padding:14px 18px;margin-bottom:20px;
+font-family:‘Poppins’,monospace;font-size:11.5px;
+color:var(–muted);text-align:left;line-height:1.8;
+}
+.phrase-line{
+opacity:0;transform:translateX(-6px);
+transition:opacity .4s,transform .4s;
+display:flex;align-items:center;gap:8px;
+}
+.phrase-line.in{opacity:1;transform:translateX(0)}
+.phrase-line .tag{color:var(–cyan);font-size:10px;min-width:8px}
+.phrase-line.ok .tag{color:var(–green)}
+.phrase-line.warn .tag{color:var(–gold)}
+.phrase-line.err .tag{color:var(–red)}
+
+/* ── SMILE INDICATOR ── */
+.smile-area{
+display:flex;flex-direction:column;align-items:center;
+gap:16px;margin-bottom:24px;width:100%;
+}
+.smile-prompt{
+font-size:15px;font-weight:500;color:#fff;
+}
+.smile-meter-wrap{
+position:relative;width:80px;height:80px;
+}
+.smile-svg{transform:rotate(-90deg)}
+.smile-count{
+position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+font-family:var(–font);font-size:26px;font-weight:700;color:var(–gold);
+}
+
+/* ── RESULT ── */
+.result-badge{
+width:100%;padding:24px;border-radius:var(–radius);
+background:rgba(74,222,128,0.06);
+border:1px solid rgba(74,222,128,0.2);
+margin-bottom:20px;text-align:center;
+box-shadow:0 0 40px rgba(74,222,128,0.06);
+animation:resultGlow 2.5s ease-in-out infinite;
+}
+@keyframes resultGlow{
+0%,100%{box-shadow:0 0 40px rgba(74,222,128,0.06)}
+50%{box-shadow:0 0 60px rgba(74,222,128,0.12)}
+}
+.result-icon{font-size:44px;margin-bottom:10px;display:block;animation:pop .5s cubic-bezier(.34,1.56,.64,1) both}
+@keyframes pop{from{transform:scale(0);opacity:0}to{transform:scale(1);opacity:1}}
+.result-title{font-size:24px;font-weight:700;color:var(–green);margin-bottom:6px}
+.result-status{font-size:14px;color:var(–text);line-height:1.6;margin-bottom:8px}
+.result-obs{
+font-size:12px;color:var(–muted);font-style:italic;
+padding-top:12px;margin-top:12px;border-top:1px solid rgba(255,255,255,0.06);
+}
+
+/* ── STATS ── */
+.stats-row{
+display:flex;gap:10px;width:100%;margin-bottom:20px;
+}
+.stat{
+flex:1;background:var(–card);border:1px solid var(–border);
+border-radius:14px;padding:12px 10px;text-align:center;
+}
+.stat-value{font-size:18px;font-weight:700;color:#fff;margin-bottom:2px}
+.stat-label{font-size:9px;color:var(–muted);letter-spacing:.1em;text-transform:uppercase}
+
+/* ── BUTTONS ── */
+.btn{
+position:relative;overflow:hidden;cursor:pointer;
+font-family:var(–font);font-weight:600;font-size:14px;
+letter-spacing:.03em;
+padding:0 28px;height:52px;
+border-radius:100px;outline:none;border:none;
+display:inline-flex;align-items:center;justify-content:center;gap:10px;
+width:100%;max-width:360px;
+transition:transform .2s,box-shadow .3s;
+-webkit-tap-highlight-color:transparent;
+}
+.btn-primary{
+background:linear-gradient(135deg,var(–cyan),#60a5fa);
+color:#07090f;
+box-shadow:0 8px 28px rgba(56,189,248,0.35);
+}
+.btn-primary:active{transform:scale(.97)}
+.btn-primary:hover{box-shadow:0 12px 36px rgba(56,189,248,0.45)}
+
+.btn-ghost{
+background:var(–card);color:var(–muted);
+border:1px solid var(–border);font-size:12px;
+height:44px;margin-top:6px;
+}
+.btn-ghost:hover{color:var(–text);border-color:rgba(255,255,255,0.15)}
+.btn-ghost:active{transform:scale(.97)}
+
+/* Ripple */
+.btn .ripple{
+position:absolute;border-radius:50%;background:rgba(255,255,255,0.25);
+transform:scale(0);animation:rippleAnim .6s linear;pointer-events:none;
+}
+@keyframes rippleAnim{to{transform:scale(4);opacity:0}}
+
+/* ── PERMISSION ERROR ── */
+.perm-error{
+width:100%;background:rgba(248,113,113,0.08);
+border:1px solid rgba(248,113,113,0.2);
+border-radius:var(–radius);padding:16px 18px;
+font-size:13px;color:var(–red);text-align:center;
+line-height:1.6;display:none;
+margin-bottom:16px;
+}
+
+/* ── HELPERS ── */
+.mt8{margin-top:8px}
+.hidden{display:none!important}
+
+/* ── MEDIA ── */
+@media(max-height:700px){
+.cam-container{aspect-ratio:4/5}
+.logo{margin-bottom:20px}
+}
+@media(min-width:480px){
+.cam-container{border-radius:28px}
+}
+</style>
+
+</head>
+<body>
+
+<div class="wrap">
+  <div class="logo">SmileOS · v2.4</div>
+
+  <!-- ════════════════════════════════
+       SCREEN 0 — HOME
+  ════════════════════════════════ -->
+
+  <div class="screen active" id="s0">
+
+```
+<div class="alert-chip">
+  <span class="dot-pulse"></span>
+  ANOMALIA DETECTADA
+</div>
+
+<h1 class="home-title">
+  Sistema detectou possível falta de sorriso ⚠️
+</h1>
+<p class="home-sub">
+  <strong>Verificação recomendada.</strong><br>
+  Processo indolor, duração aproximada de 8 segundos.<br>Resultados armazenados no coração. 💙
+</p>
+
+<div class="perm-error" id="permError">
+  📵 Permissão da câmera negada.<br>
+  Por favor, libere o acesso à câmera nas configurações do navegador e tente novamente.
+</div>
+
+<button class="btn btn-primary" id="btnStart">
+  <span>Iniciar verificação</span>
+  <span>→</span>
+</button>
+```
+
+  </div>
+
+  <!-- ════════════════════════════════
+       SCREEN 1 — CAMERA + FLOW
+  ════════════════════════════════ -->
+
+  <div class="screen" id="s1">
+
+```
+<!-- Camera -->
+<div class="cam-container" id="camContainer">
+  <video id="video" autoplay playsinline muted></video>
+  <div class="scan-overlay" id="scanOverlay">
+    <div class="scan-line-v"></div>
+  </div>
+  <div class="face-box" id="faceBox">
+    <div class="smile-ring" id="smileRing"></div>
+  </div>
+  <div class="vid-badge">
+    <span class="rec"></span>
+    AO VIVO
+  </div>
+</div>
+
+<!-- Status card -->
+<div class="status-card">
+  <div class="status-label">STATUS DO SISTEMA</div>
+  <div class="status-msg" id="statusMsg">Conectando câmera...</div>
+</div>
+
+<!-- Progress bar (hidden until needed) -->
+<div class="prog-wrap hidden" id="progWrap">
+  <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
+  <div class="prog-label" id="progLabel"></div>
+</div>
+
+<!-- Dynamic phrases (hidden until needed) -->
+<div class="phrases hidden" id="phrasesBox">
+  <div class="phrase-line" id="ph0"><span class="tag">›</span> <span>Detectando nível de teimosia...</span></div>
+  <div class="phrase-line" id="ph1"><span class="tag ok">✓</span> <span>Carregando charme...</span></div>
+  <div class="phrase-line warn" id="ph2"><span class="tag">⚠</span> <span>Erro: beleza acima do normal</span></div>
+</div>
+
+<!-- Smile area (hidden until needed) -->
+<div class="smile-area hidden" id="smileArea">
+  <div class="smile-prompt">Sorria para validação 😄</div>
+  <div class="smile-meter-wrap">
+    <svg class="smile-svg" width="80" height="80" viewBox="0 0 80 80">
+      <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(251,191,36,0.12)" stroke-width="5"/>
+      <circle id="smileCirc" cx="40" cy="40" r="34" fill="none"
+        stroke="var(--gold)" stroke-width="5"
+        stroke-dasharray="214" stroke-dashoffset="214"
+        stroke-linecap="round"
+        style="transition:stroke-dashoffset 1s linear;filter:drop-shadow(0 0 6px rgba(251,191,36,.6))"/>
+    </svg>
+    <div class="smile-count" id="smileCount">3</div>
+  </div>
+</div>
+```
+
+  </div>
+
+  <!-- ════════════════════════════════
+       SCREEN 2 — RESULT
+  ════════════════════════════════ -->
+
+  <div class="screen" id="s2">
+
+```
+<div class="result-badge">
+  <span class="result-icon">✔️</span>
+  <div class="result-title">Sorriso aprovado</div>
+  <div class="result-status">
+    Status: continua linda<br>
+    <em style="color:var(--muted);font-size:13px">(mesmo quando tá bravinha comigo 😄)</em>
+  </div>
+  <div class="result-obs">
+    Observação: esse sorriso melhora meu dia fácil 🌟
+  </div>
+</div>
+
+<div class="stats-row">
+  <div class="stat">
+    <div class="stat-value" style="color:var(--green)">98.6%</div>
+    <div class="stat-label">Smile Score</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value" style="color:var(--gold)">∞</div>
+    <div class="stat-label">Lindeza</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value" style="color:var(--cyan)">+100</div>
+    <div class="stat-label">Felicidade</div>
+  </div>
+</div>
+
+<button class="btn btn-primary" id="btnRestart">
+  <span>Fazer outra verificação</span>
+  <span>↺</span>
+</button>
+<div style="font-size:10px;color:var(--muted);margin-top:8px;letter-spacing:.03em">
+  (porque nunca é suficiente 😄)
+</div>
+```
+
+  </div>
+
+</div><!-- /wrap -->
+
+<script>
+// ── UTILS ──────────────────────────────────────────────
+function go(n){
+  document.querySelectorAll('.screen').forEach((s,i)=>{
+    s.classList.toggle('active',i===n);
+  });
+}
+function show(el){el.classList.remove('hidden')}
+function hide(el){el.classList.add('hidden')}
+function setMsg(txt){
+  const el=document.getElementById('statusMsg');
+  el.style.opacity=0;
+  setTimeout(()=>{el.innerHTML=txt;el.style.opacity=1},200);
+  el.style.transition='opacity .2s';
+}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+
+// Ripple on buttons
+document.querySelectorAll('.btn').forEach(btn=>{
+  btn.addEventListener('pointerdown',e=>{
+    const r=document.createElement('span');
+    r.className='ripple';
+    const rect=btn.getBoundingClientRect();
+    const size=Math.max(rect.width,rect.height)*2;
+    r.style.cssText=`width:${size}px;height:${size}px;left:${e.clientX-rect.left-size/2}px;top:${e.clientY-rect.top-size/2}px`;
+    btn.appendChild(r);
+    r.addEventListener('animationend',()=>r.remove());
+  });
+});
+
+// ── CAMERA STREAM ──────────────────────────────────────
+let stream=null;
+
+async function startCamera(){
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:'user',width:{ideal:1280},height:{ideal:960}},
+      audio:false
+    });
+    const video=document.getElementById('video');
+    video.srcObject=stream;
+    await video.play();
+    return true;
+  }catch(err){
+    return false;
+  }
+}
+
+function stopCamera(){
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  stream=null;
+}
+
+// ── PROGRESS ANIMATION ──────────────────────────────────
+async function animateProgress(){
+  const bar=document.getElementById('progFill');
+  const label=document.getElementById('progLabel');
+  const labels=[
+    'Mapeando estrutura facial...',
+    'Calibrando detector de sorriso...',
+    'Processando dados biométricos...',
+    'Quase lá...',
+  ];
+  const totalMs=3000;
+  const step=50;
+  let elapsed=0;
+  let labelIdx=0;
+  label.textContent=labels[0];
+
+  return new Promise(resolve=>{
+    const iv=setInterval(()=>{
+      elapsed+=step;
+      const pct=Math.min((elapsed/totalMs)*100,100);
+      bar.style.width=pct+'%';
+
+      const li=Math.floor((elapsed/(totalMs/labels.length)));
+      if(li!==labelIdx&&li<labels.length){
+        labelIdx=li;
+        label.style.opacity=0;
+        setTimeout(()=>{label.textContent=labels[labelIdx];label.style.opacity=1},150);
+        label.style.transition='opacity .15s';
+      }
+
+      if(elapsed>=totalMs){
+        clearInterval(iv);
+        resolve();
+      }
+    },step);
+  });
+}
+
+// ── PHRASE ANIMATION ────────────────────────────────────
+async function showPhrases(){
+  const ids=['ph0','ph1','ph2'];
+  const delays=[0,700,1400];
+  ids.forEach((id,i)=>{
+    setTimeout(()=>{
+      document.getElementById(id).classList.add('in');
+    },delays[i]);
+  });
+  await sleep(2200);
+}
+
+// ── SMILE TIMER ─────────────────────────────────────────
+async function runSmileTimer(){
+  const circ=document.getElementById('smileCirc');
+  const numEl=document.getElementById('smileCount');
+  const faceBox=document.getElementById('faceBox');
+  const smileRing=document.getElementById('smileRing');
+  const circumference=214;
+
+  smileRing.classList.add('active');
+  faceBox.style.borderColor='var(--gold)';
+  faceBox.style.boxShadow='0 0 20px rgba(251,191,36,.3),inset 0 0 16px rgba(251,191,36,.05)';
+
+  let t=3;
+  circ.style.strokeDashoffset=circumference;
+  numEl.textContent=t;
+
+  return new Promise(resolve=>{
+    const iv=setInterval(()=>{
+      t--;
+      const offset=circumference*((3-t)/3);
+      circ.style.strokeDashoffset=circumference-offset;
+      numEl.textContent=t>0?t:'✓';
+      if(t<=0){
+        clearInterval(iv);
+        smileRing.classList.remove('active');
+        faceBox.style.borderColor='var(--green)';
+        faceBox.style.boxShadow='0 0 20px rgba(74,222,128,.35),inset 0 0 16px rgba(74,222,128,.05)';
+        resolve();
+      }
+    },1000);
+  });
+}
+
+// ── MAIN FLOW ────────────────────────────────────────────
+document.getElementById('btnStart').addEventListener('click', async ()=>{
+  // Hide perm error if visible
+  document.getElementById('permError').style.display='none';
+
+  // Go to camera screen
+  go(1);
+
+  // Show camera container
+  const camCont=document.getElementById('camContainer');
+  camCont.classList.add('visible');
+
+  // Request camera
+  setMsg('Conectando câmera...');
+  const ok=await startCamera();
+
+  if(!ok){
+    go(0);
+    camCont.classList.remove('visible');
+    const pe=document.getElementById('permError');
+    pe.style.display='block';
+    return;
+  }
+
+  // Camera connected
+  document.getElementById('scanOverlay').classList.add('on');
+  await sleep(600);
+  setMsg('Câmera conectada com sucesso 📸');
+
+  // Face box appears
+  await sleep(800);
+  document.getElementById('faceBox').classList.add('visible');
+
+  // Analyzing
+  await sleep(1000);
+  setMsg('Analisando expressão facial...');
+
+  // Progress + phrases appear
+  show(document.getElementById('progWrap'));
+  show(document.getElementById('phrasesBox'));
+
+  // Run simultaneously
+  await Promise.all([animateProgress(), showPhrases()]);
+  await sleep(300);
+
+  // Smile step
+  hide(document.getElementById('progWrap'));
+  hide(document.getElementById('phrasesBox'));
+  show(document.getElementById('smileArea'));
+  setMsg('Sorria para validação 😄');
+
+  await runSmileTimer();
+
+  // Done! show result
+  await sleep(500);
+  stopCamera();
+  go(2);
+});
+
+// ── RESTART ──────────────────────────────────────────────
+document.getElementById('btnRestart').addEventListener('click',()=>{
+  // Reset all state
+  document.getElementById('progFill').style.width='0%';
+  document.getElementById('progLabel').textContent='';
+  ['ph0','ph1','ph2'].forEach(id=>document.getElementById(id).classList.remove('in'));
+  document.getElementById('statusMsg').textContent='Conectando câmera...';
+  document.getElementById('smileCirc').style.strokeDashoffset='214';
+  document.getElementById('smileCount').textContent='3';
+  document.getElementById('faceBox').classList.remove('visible');
+  document.getElementById('faceBox').style.borderColor='';
+  document.getElementById('faceBox').style.boxShadow='';
+  document.getElementById('smileRing').classList.remove('active');
+  document.getElementById('scanOverlay').classList.remove('on');
+  document.getElementById('camContainer').classList.remove('visible');
+  hide(document.getElementById('progWrap'));
+  hide(document.getElementById('phrasesBox'));
+  hide(document.getElementById('smileArea'));
+
+  go(0);
+});
+</script>
+
+</body>
+</html>
