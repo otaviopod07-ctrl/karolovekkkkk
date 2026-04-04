@@ -1,1 +1,0 @@
-# deteccao de sorrisao
